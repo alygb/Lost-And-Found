@@ -22,6 +22,8 @@ export default function AdminPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [claims, setClaims] = useState<any[]>([]);
   const [search, setSearch] = useState("");
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [adminName, setAdminName] = useState("");
 
   useEffect(() => {
     checkAdmin();
@@ -29,16 +31,17 @@ export default function AdminPage() {
 
   const checkAdmin = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.push("/login"); return; }
+    if (!user) { router.push("/admin-login"); return; }
     setCurrentUserId(user.id);
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role, is_super_admin")
+      .select("role, is_super_admin, full_name")  // ← full_name added
       .eq("id", user.id)
       .single();
     if (!profile || profile.role !== "admin") { router.push("/admin-login"); return; }
     setIsAdmin(true);
     setIsSuperAdmin(profile.is_super_admin || false);
+    setAdminName(profile.full_name || "Admin");   // ← added
     fetchAllData();
   };
 
@@ -172,11 +175,20 @@ export default function AdminPage() {
     }
   };
 
+  const handleAdminLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/admin-login");
+  };
+
+
+
   const handleEmailBothUsers = (claim: any) => {
     const email1 = claim.lost_user?.email;
     const email2 = claim.found_user?.email;
     window.location.href = `mailto:${email1},${email2}?subject=Lost and Found Item Match Verified&body=Dear Students,%0D%0A%0D%0AYour item match has been verified by admin. Please coordinate to hand over the item.%0D%0A%0D%0AItem: ${claim.lost_item?.item_name}%0D%0A%0D%0ARegards,%0D%0AUniversity Lost and Found System`;
   };
+
+
 
   const canManageUser = (targetUser: any) => {
     if (targetUser.id === currentUserId) return false;
@@ -220,15 +232,45 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gray-50">
 
       {/* Admin Header */}
+
       <div className="bg-blue-900 text-white px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Admin Dashboard</h1>
             <p className="text-blue-300 text-sm">Lost & Found Management System</p>
           </div>
-          <span className={`text-sm font-bold px-4 py-1.5 rounded-full ${isSuperAdmin ? "bg-yellow-400 text-blue-900" : "bg-blue-600 text-white"}`}>
-            {isSuperAdmin ? "⭐ SUPER ADMIN" : "ADMIN"}
-          </span>
+
+          {/* Admin Profile Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setIsProfileOpen(!isProfileOpen)}
+              className="flex items-center gap-2 bg-blue-800 hover:bg-blue-700 px-3 py-2 rounded-full transition"
+            >
+              <div className="w-8 h-8 rounded-full bg-yellow-400 text-blue-900 flex items-center justify-center font-bold text-sm">
+                {adminName?.charAt(0).toUpperCase() || "A"}
+              </div>
+              <span className="text-sm font-medium">{adminName || "Admin"}</span>
+              <span className="text-xs">▼</span>
+            </button>
+
+            {/* Dropdown Menu */}
+            {isProfileOpen && (
+              <div className="absolute right-0 mt-2 w-48 bg-white text-gray-800 rounded-2xl shadow-xl py-2 z-50">
+                <div className="px-4 py-3 border-b border-gray-100">
+                  <p className="font-semibold text-gray-800">{adminName}</p>
+                  <p className="text-xs text-gray-400">
+                    {isSuperAdmin ? "⭐ Super Admin" : "Admin"}
+                  </p>
+                </div>
+                <button
+                  onClick={handleAdminLogout}
+                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-red-50 text-red-500 transition text-sm w-full"
+                >
+                  🚪 Logout
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

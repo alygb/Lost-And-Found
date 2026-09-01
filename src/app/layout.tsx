@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Navbar from "@/components/layout/Navbar";
-import BanChecker from "@/components/layouts/BanChecker";
 
 export const metadata: Metadata = {
   title: "Lost & Found System",
@@ -16,9 +14,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <Navbar />
-        <BanChecker />
-        <main>{children}</main>
+        {children}
       </body>
     </html>
   );

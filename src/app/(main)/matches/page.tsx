@@ -15,6 +15,8 @@ export default function MatchesPage() {
   const [error, setError] = useState("");
   const [claimingId, setClaimingId] = useState("");
   const [claimedItems, setClaimedItems] = useState<string[]>([]);
+  const [showClaimSuccess, setShowClaimSuccess] = useState(false);
+  const [claimedItemName, setClaimedItemName] = useState("");
 
   useEffect(() => {
     fetchUserAndItems();
@@ -32,7 +34,6 @@ export default function MatchesPage() {
       .eq("status", "searching")
       .order("created_at", { ascending: false });
 
-    // Get already claimed matches
     const { data: existingMatches } = await supabase
       .from("matches")
       .select("found_item_id")
