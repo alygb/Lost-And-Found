@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 export default function RegisterPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -70,16 +71,35 @@ export default function RegisterPage() {
     setLoading(false);
   };
 
+  // ✅ Continue with Google
+  const handleGoogleSignup = async () => {
+    setError("");
+    setGoogleLoading(true);
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+
+    if (error) {
+      setError(error.message);
+      setGoogleLoading(false);
+    }
+    // On success the browser redirects to Google
+  };
+
   return (
     <div className="min-h-screen flex">
 
       {/* Left Side — Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-linear-to-br from-blue-900 via-blue-800 to-blue-600 flex-col items-center justify-center px-12 relative overflow-hidden">
 
-        {/* Background decorations */}
-        <div className="absolute -top [-80px] -left [-80px] w-80 h-80 bg-blue-500 opacity-20 rounded-full"></div>
-        <div className="absolute -bottom [-60px] -right [-60px] w-64 h-64 bg-yellow-400 opacity-10 rounded-full"></div>
-        <div className="absolute top-1/3 -right[-40px] w-40 h-40 bg-blue-300 opacity-10 rounded-full"></div>
+        {/* Background decorations (fixed classes) */}
+        <div className="absolute -top-20 -left-20 w-80 h-80 bg-blue-500 opacity-20 rounded-full"></div>
+        <div className="absolute -bottom-16 -right-16 w-64 h-64 bg-yellow-400 opacity-10 rounded-full"></div>
+        <div className="absolute top-1/3 -right-10 w-40 h-40 bg-blue-300 opacity-10 rounded-full"></div>
 
         {/* Content */}
         <div className="relative z-10 text-center text-white">
@@ -92,28 +112,28 @@ export default function RegisterPage() {
           {/* Steps */}
           <div className="flex flex-col gap-4 text-left mt-6">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">1</div>
+              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm shrink-0">1</div>
               <div>
                 <p className="font-semibold text-sm">Create your account</p>
                 <p className="text-blue-200 text-xs">Fill in your university details</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">2</div>
+              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm shrink-0">2</div>
               <div>
                 <p className="font-semibold text-sm">Report lost or found items</p>
                 <p className="text-blue-200 text-xs">Upload photos and description</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">3</div>
+              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</div>
               <div>
                 <p className="font-semibold text-sm">AI finds matches for you</p>
                 <p className="text-blue-200 text-xs">Smart algorithm connects owners</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">4</div>
+              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm shrink-0">4</div>
               <div>
                 <p className="font-semibold text-sm">Collect from Admin Office</p>
                 <p className="text-blue-200 text-xs">Safe and verified handover</p>
@@ -144,14 +164,44 @@ export default function RegisterPage() {
           {/* Form Card */}
           <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100">
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm flex items-center gap-2 mb-5">
+                <span>⚠️</span>
+                <span>{error}</span>
+              </div>
+            )}
 
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
-                  <span>⚠️</span>
-                  <span>{error}</span>
-                </div>
+            {/* ✅ Google Button */}
+            <button
+              type="button"
+              onClick={handleGoogleSignup}
+              disabled={googleLoading}
+              className="w-full flex items-center justify-center gap-3 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-semibold py-3 rounded-xl transition disabled:opacity-50"
+            >
+              {googleLoading ? (
+                <svg className="animate-spin h-5 w-5 text-gray-500" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5" viewBox="0 0 48 48">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                </svg>
               )}
+              {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
+            </button>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3 my-5">
+              <div className="flex-1 h-px bg-gray-200"></div>
+              <p className="text-gray-400 text-xs">OR SIGN UP WITH EMAIL</p>
+              <div className="flex-1 h-px bg-gray-200"></div>
+            </div>
+
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
 
               {/* Full Name */}
               <div>
@@ -163,7 +213,7 @@ export default function RegisterPage() {
                   <input
                     type="text"
                     name="fullName"
-                    placeholder="Ali Mujtaba"
+                    placeholder="Your Full Name"
                     value={formData.fullName}
                     onChange={handleChange}
                     required
@@ -288,7 +338,6 @@ export default function RegisterPage() {
                     {showConfirmPassword ? "🙈" : "👁️"}
                   </button>
                 </div>
-                {/* Password match indicator */}
                 {formData.confirmPassword && (
                   <p className={`text-xs mt-1 ${formData.password === formData.confirmPassword ? "text-green-500" : "text-red-500"}`}>
                     {formData.password === formData.confirmPassword ? "✅ Passwords match" : "❌ Passwords don't match"}
@@ -305,8 +354,8 @@ export default function RegisterPage() {
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
                     <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                     </svg>
                     Creating Account...
                   </span>
@@ -315,15 +364,8 @@ export default function RegisterPage() {
 
             </form>
 
-            {/* Divider */}
-            <div className="flex items-center gap-3 my-5">
-              <div className="flex-1 h-px bg-gray-200"></div>
-              <p className="text-gray-400 text-xs">OR</p>
-              <div className="flex-1 h-px bg-gray-200"></div>
-            </div>
-
             {/* Login Link */}
-            <p className="text-center text-gray-500 text-sm">
+            <p className="text-center text-gray-500 text-sm mt-6">
               Already have an account?{" "}
               <Link href="/login" className="text-blue-700 hover:text-blue-900 font-semibold hover:underline">
                 Sign in →
@@ -332,7 +374,6 @@ export default function RegisterPage() {
 
           </div>
 
-          
         </div>
       </div>
 

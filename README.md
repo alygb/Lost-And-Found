@@ -5,7 +5,8 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 First, run the development server:
 
 ```bash
-npm run dev
+npm run dev #for lost-and-found (Desktop)
+npx expo start #for lost-found-mobile (Mobile)
 # or
 yarn dev
 # or
