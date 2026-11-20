@@ -1,4 +1,5 @@
 import Navbar from "@/components/layout/Navbar";
+import Footer from "@/components/layout/Footer";
 import BanChecker from "@/components/layouts/BanChecker";
 
 export default function MainLayout({
@@ -11,6 +12,7 @@ export default function MainLayout({
       <Navbar />
       <BanChecker />
       <main>{children}</main>
+      <Footer />
     </>
   );
 }

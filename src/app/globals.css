@@ -1,1 +1,21 @@
+
 @import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand: #2563eb;
+  --color-brand-dark: #1d4ed8;
+  --color-brand-soft: #eff4ff;
+  --color-ink: #0f172a;
+  --color-surface: #f6f8fb;
+
+  --shadow-card: 0 5px 14px rgba(15, 23, 42, 0.07);
+  --shadow-pop: 0 20px 50px rgba(15, 23, 42, 0.18);
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}

@@ -1,260 +1,294 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import {
+  Bell, ChevronDown, Compass, LayoutDashboard, LogOut, Menu, User, X,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
+
+const LINKS = [
+  { href: "/", label: "Home" },
+  { href: "/report-lost", label: "Report Lost" },
+  { href: "/report-found", label: "Report Found" },
+  { href: "/matches", label: "Matches" },
+  { href: "/dashboard", label: "Dashboard" },
+];
 
 export default function Navbar() {
+  const pathname = usePathname();
   const router = useRouter();
-  const [isOpen, setIsOpen] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
+
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
-  const [showNotifications, setShowNotifications] = useState(false);
+  const [openNotif, setOpenNotif] = useState(false);
+  const [openProfile, setOpenProfile] = useState(false);
+  const [openMobile, setOpenMobile] = useState(false);
+
+  const notifRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    checkUser();
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser(session.user);
-        fetchProfile(session.user.id);
-      } else {
-        setUser(null);
+    const load = async (uid: string) => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("full_name,avatar_url,department")
+        .eq("id", uid)
+        .single();
+      setProfile(data);
+
+      const { data: n } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", uid)
+        .eq("is_read", false)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      setNotifications(n || []);
+    };
+
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+      if (user) load(user.id);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) setTimeout(() => load(u.id), 0);
+      else {
         setProfile(null);
+        setNotifications([]);
       }
     });
-    return () => authListener.subscription.unsubscribe();
+
+    return () => sub.subscription.unsubscribe();
   }, []);
 
-  const checkUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      setUser(user);
-      fetchProfile(user.id);
-    }
-  };
+  // Close menus on route change
+  useEffect(() => {
+    setOpenNotif(false);
+    setOpenProfile(false);
+    setOpenMobile(false);
+  }, [pathname]);
 
-  const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
-    if (data) setProfile(data);
-    fetchNotifications(userId);
-  };
-
-  const fetchNotifications = async (userId: string) => {
-    const { data } = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("is_read", false)
-      .order("created_at", { ascending: false })
-      .limit(10);
-    setNotifications(data || []);
-  };
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setOpenNotif(false);
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) setOpenProfile(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const markAllRead = async () => {
     if (!user) return;
-    await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("user_id", user.id);
+    await supabase.from("notifications").update({ is_read: true }).eq("user_id", user.id);
     setNotifications([]);
-    setShowNotifications(false);
   };
 
-  const handleLogout = async () => {
+  const logout = async () => {
     await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
-    setIsProfileOpen(false);
+    setOpenProfile(false);
     router.push("/");
   };
 
-  return (
-    <nav className="bg-blue-700 text-white shadow-lg relative z-50">
-      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+  // Login and register have their own full-screen layouts
+  if (pathname === "/login" || pathname === "/register") return null;
 
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname.startsWith(href);
+
+  const initial = profile?.full_name?.charAt(0).toUpperCase() || "U";
+  const firstName = profile?.full_name?.split(" ")[0] || "Account";
+
+  const Avatar = ({ size = "h-9 w-9" }: { size?: string }) =>
+    profile?.avatar_url ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={profile.avatar_url} alt="" className={`${size} rounded-full object-cover`} />
+    ) : (
+      <span className={`${size} flex items-center justify-center rounded-full bg-brand text-sm font-bold text-white`}>
+        {initial}
+      </span>
+    );
+
+  return (
+    <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4">
         {/* Logo */}
-        <Link href="/" className="text-xl font-bold tracking-wide">
-          🎓 Lost & Found
+        <Link href="/" className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-white shadow-card">
+            <Compass className="h-5 w-5" />
+          </span>
+          <span className="text-lg font-extrabold tracking-tight text-slate-900">
+            AJK <span className="text-brand">Lost &amp; Found</span>
+          </span>
         </Link>
 
-        {/* Desktop Menu */}
-        <div className="hidden md:flex gap-6 text-sm font-medium">
-          <Link href="/" className="hover:text-yellow-300 transition">Home</Link>
-          <Link href="/report-lost" className="hover:text-yellow-300 transition">Report Lost</Link>
-          <Link href="/report-found" className="hover:text-yellow-300 transition">Report Found</Link>
-          <Link href="/matches" className="hover:text-yellow-300 transition">Matches</Link>
-          <Link href="/dashboard" className="hover:text-yellow-300 transition">Dashboard</Link>
-        </div>
+        {/* Desktop links */}
+        <nav className="hidden items-center gap-1 md:flex">
+          {LINKS.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                isActive(l.href)
+                  ? "bg-brand-soft text-brand"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              {l.label}
+            </Link>
+          ))}
+        </nav>
 
-        {/* Auth Buttons or Profile */}
-        {/* Auth Buttons or Profile */}
-        <div className="hidden md:flex gap-3 items-center">
-          {user && (
-            <div className="relative">
-              <button
-                onClick={() => setShowNotifications(!showNotifications)}
-                className="relative text-white hover:text-yellow-300 transition"
-              >
-                <span className="text-xl">🔔</span>
-                {notifications.length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
-                    {notifications.length}
-                  </span>
-                )}
-              </button>
+        {/* Right side */}
+        <div className="flex items-center gap-2">
+          {user ? (
+            <>
+              {/* Notifications */}
+              <div className="relative" ref={notifRef}>
+                <button
+                  onClick={() => {
+                    setOpenNotif(!openNotif);
+                    setOpenProfile(false);
+                  }}
+                  className="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100"
+                  aria-label="Notifications"
+                >
+                  <Bell className="h-5 w-5" />
+                  {notifications.length > 0 && (
+                    <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                      {notifications.length}
+                    </span>
+                  )}
+                </button>
 
-              {showNotifications && (
-                <div className="absolute right-0 mt-2 w-80 bg-white text-gray-800 rounded-2xl shadow-xl py-2 z-50">
-                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                    <p className="font-bold text-gray-800">Notifications</p>
-                    {notifications.length > 0 && (
-                      <button onClick={markAllRead} className="text-xs text-blue-700 hover:underline">
-                        Mark all read
-                      </button>
+                {openNotif && (
+                  <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-pop">
+                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                      <p className="text-sm font-bold text-slate-900">Notifications</p>
+                      {notifications.length > 0 && (
+                        <button onClick={markAllRead} className="text-xs font-semibold text-brand hover:underline">
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                    {notifications.length === 0 ? (
+                      <p className="px-4 py-8 text-center text-sm text-slate-400">
+                        You are all caught up
+                      </p>
+                    ) : (
+                      <div className="max-h-80 overflow-y-auto">
+                        {notifications.map((n) => (
+                          <div key={n.id} className="border-b border-slate-50 px-4 py-3 last:border-0 hover:bg-slate-50">
+                            <p className="text-sm font-semibold text-slate-800">{n.title}</p>
+                            <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{n.message}</p>
+                            <p className="mt-1 text-[11px] text-slate-300">
+                              {new Date(n.created_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  {notifications.length === 0 ? (
-                    <div className="px-4 py-6 text-center">
-                      <p className="text-gray-400 text-sm">No new notifications</p>
+                )}
+              </div>
+
+              {/* Profile */}
+              <div className="relative" ref={profileRef}>
+                <button
+                  onClick={() => {
+                    setOpenProfile(!openProfile);
+                    setOpenNotif(false);
+                  }}
+                  className="flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-3 transition hover:bg-slate-50"
+                >
+                  <Avatar />
+                  <span className="hidden text-sm font-semibold text-slate-700 sm:block">
+                    {firstName}
+                  </span>
+                  <ChevronDown className="hidden h-4 w-4 text-slate-400 sm:block" />
+                </button>
+
+                {openProfile && (
+                  <div className="absolute right-0 mt-2 w-64 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-pop">
+                    <div className="flex items-center gap-3 border-b border-slate-100 p-4">
+                      <Avatar size="h-11 w-11" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-slate-900">{profile?.full_name}</p>
+                        <p className="truncate text-xs text-slate-400">{user.email}</p>
+                        {profile?.department && (
+                          <p className="truncate text-xs text-slate-400">{profile.department}</p>
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <div className="max-h-64 overflow-y-auto">
-                      {notifications.map((notif) => (
-                        <div key={notif.id} className="px-4 py-3 hover:bg-gray-50 border-b border-gray-50">
-                          <p className="text-sm font-medium text-gray-800">{notif.title}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">{notif.message}</p>
-                          <p className="text-xs text-gray-300 mt-1">
-                            {new Date(notif.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      ))}
+                    <div className="p-2">
+                      <Link href="/profile" className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                        <User className="h-4 w-4 text-slate-400" /> My profile
+                      </Link>
+                      <Link href="/dashboard" className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                        <LayoutDashboard className="h-4 w-4 text-slate-400" /> Dashboard
+                      </Link>
+                      <button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50">
+                        <LogOut className="h-4 w-4" /> Sign out
+                      </button>
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-          {user ? (
-            <div className="relative">
-              <button
-                onClick={() => setIsProfileOpen(!isProfileOpen)}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded-full transition"
-              >
-                {profile?.avatar_url ? (
-                  <img
-                    src={`${profile.avatar_url}`}
-                    alt="avatar"
-                    className="w-8 h-8 rounded-full object-cover"
-                    key={profile.avatar_url}
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-yellow-400 text-blue-900 flex items-center justify-center font-bold text-sm">
-                    {profile?.full_name?.charAt(0).toUpperCase() || "U"}
                   </div>
                 )}
-                <span className="text-sm font-medium">
-                  {profile?.full_name?.split(" ")[0] || "Profile"}
-                </span>
-                <span className="text-xs">▼</span>
-              </button>
-
-              {/* Dropdown */}
-              {isProfileOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white text-gray-800 rounded-2xl shadow-xl py-2 z-50">
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="font-semibold text-gray-800">{profile?.full_name}</p>
-                    <p className="text-xs text-gray-400">{user.email}</p>
-                    <p className="text-xs text-gray-400">{profile?.department}</p>
-                  </div>
-                  <Link
-                    href="/profile"
-                    onClick={() => setIsProfileOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition text-sm"
-                  >
-                    👤 My Profile
-                  </Link>
-                  
-                  <Link
-                    href="/dashboard"
-                    onClick={() => setIsProfileOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition text-sm"
-                  >
-                    📊 Dashboard
-                  </Link>
-                  <Link
-                    href="/report-lost"
-                    onClick={() => setIsProfileOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition text-sm"
-                  >
-                    🔍 Report Lost Item
-                  </Link>
-                  <Link
-                    href="/report-found"
-                    onClick={() => setIsProfileOpen(false)}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition text-sm"
-                  >
-                    📦 Report Found Item
-                  </Link>
-                  <div className="border-t border-gray-100 mt-1">
-                    <button
-                      onClick={handleLogout}
-                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-red-50 text-red-500 transition text-sm w-full"
-                    >
-                      🚪 Logout
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <>
-              <Link href="/login" className="px-4 py-1.5 rounded-full border border-white hover:bg-white hover:text-blue-700 transition text-sm">
-                Login
-              </Link>
-              <Link href="/register" className="px-4 py-1.5 rounded-full bg-yellow-400 text-blue-900 font-semibold hover:bg-yellow-300 transition text-sm">
-                Register
-              </Link>
+              </div>
             </>
+          ) : (
+            <div className="hidden items-center gap-2 sm:flex">
+              <Link href="/login" className="rounded-full px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                Sign in
+              </Link>
+              <Link href="/register" className="rounded-full bg-brand px-5 py-2 text-sm font-bold text-white shadow-card transition hover:bg-brand-dark">
+                Get started
+              </Link>
+            </div>
           )}
-        </div>
 
-        {/* Mobile Menu Button */}
-        <button
-          className="md:hidden text-white focus:outline-none"
-          onClick={() => setIsOpen(!isOpen)}
-        >
-          {isOpen ? "✕" : "☰"}
-        </button>
+          {/* Mobile toggle */}
+          <button
+            onClick={() => setOpenMobile(!openMobile)}
+            className="flex h-10 w-10 items-center justify-center rounded-full text-slate-700 hover:bg-slate-100 md:hidden"
+            aria-label="Menu"
+          >
+            {openMobile ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
-      {/* Mobile Menu */}
-      {isOpen && (
-        <div className="md:hidden bg-blue-800 px-4 pb-4 flex flex-col gap-3 text-sm">
-          <Link href="/" className="hover:text-yellow-300">Home</Link>
-          <Link href="/report-lost" className="hover:text-yellow-300">Report Lost</Link>
-          <Link href="/report-found" className="hover:text-yellow-300">Report Found</Link>
-          <Link href="/matches" className="hover:text-yellow-300">Matches</Link>
-          <Link href="/dashboard" className="hover:text-yellow-300">Dashboard</Link>
-          {user ? (
-            <>
-              <Link href="/profile" className="hover:text-yellow-300">My Profile</Link>
-              <button onClick={handleLogout} className="text-left text-red-300 hover:text-red-200">Logout</button>
-            </>
-          ) : (
-            <>
-              <Link href="/login" className="hover:text-yellow-300">Login</Link>
-              <Link href="/register" className="hover:text-yellow-300">Register</Link>
-            </>
+      {/* Mobile menu */}
+      {openMobile && (
+        <div className="border-t border-slate-100 bg-white px-4 pb-4 pt-2 md:hidden">
+          {LINKS.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className={`block rounded-xl px-4 py-3 text-sm font-semibold ${
+                isActive(l.href) ? "bg-brand-soft text-brand" : "text-slate-700"
+              }`}
+            >
+              {l.label}
+            </Link>
+          ))}
+          {!user && (
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <Link href="/login" className="rounded-xl border border-slate-200 py-3 text-center text-sm font-semibold text-slate-700">
+                Sign in
+              </Link>
+              <Link href="/register" className="rounded-xl bg-brand py-3 text-center text-sm font-bold text-white">
+                Get started
+              </Link>
+            </div>
           )}
         </div>
       )}
-    </nav>
+    </header>
   );
 }
