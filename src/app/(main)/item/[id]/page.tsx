@@ -12,13 +12,29 @@ export default function ItemDetailPage() {
   const [loading, setLoading] = useState(true);
   const [currentImage, setCurrentImage] = useState(0);
   const [itemType, setItemType] = useState<"lost" | "found">("lost");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState("");
 
   useEffect(() => {
-    fetchItem();
+    checkUserAndFetchItem();
   }, [id]);
 
+  const checkUserAndFetchItem = async () => {
+    // Check if current user is admin
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      setCurrentUserId(user.id);
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+      if (profile?.role === "admin") setIsAdmin(true);
+    }
+    fetchItem();
+  };
+
   const fetchItem = async () => {
-    // Try lost items first
     const { data: lostItem } = await supabase
       .from("lost_items")
       .select("*")
@@ -33,7 +49,6 @@ export default function ItemDetailPage() {
       return;
     }
 
-    // Try found items
     const { data: foundItem } = await supabase
       .from("found_items")
       .select("*")
@@ -80,6 +95,12 @@ export default function ItemDetailPage() {
     ? [item.image_url]
     : [];
 
+  // ✅ Check if current user is the owner of this item
+  const isOwner = currentUserId === item.user_id;
+
+  // ✅ Can see contact info if: admin OR owner of the item
+  const canSeeContact = isAdmin || isOwner;
+
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4">
       <div className="max-w-4xl mx-auto">
@@ -98,7 +119,6 @@ export default function ItemDetailPage() {
           <div>
             {images.length > 0 ? (
               <div>
-                {/* Main Image */}
                 <div className="relative w-full h-80 rounded-2xl overflow-hidden mb-3">
                   <img
                     src={images[currentImage]}
@@ -122,15 +142,13 @@ export default function ItemDetailPage() {
                     </>
                   )}
                 </div>
-
-                {/* Thumbnail Images */}
                 {images.length > 1 && (
                   <div className="flex gap-2 overflow-x-auto">
                     {images.map((img: string, i: number) => (
                       <button
                         key={i}
                         onClick={() => setCurrentImage(i)}
-                        className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition ${i === currentImage ? "border-blue-500" : "border-transparent"}`}
+                        className={`shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition ${i === currentImage ? "border-blue-500" : "border-transparent"}`}
                       >
                         <img src={img} alt={`thumbnail ${i}`} className="w-full h-full object-cover" />
                       </button>
@@ -148,7 +166,6 @@ export default function ItemDetailPage() {
           {/* Right — Details */}
           <div className="flex flex-col gap-5">
 
-            {/* Badge + Status */}
             <div className="flex items-center gap-3">
               <span className={`text-sm font-bold px-4 py-1.5 rounded-full ${itemType === "lost" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
                 {itemType === "lost" ? "LOST ITEM" : "FOUND ITEM"}
@@ -158,23 +175,19 @@ export default function ItemDetailPage() {
               </span>
             </div>
 
-            {/* Item Name */}
             <h1 className="text-3xl font-bold text-gray-800">{item.item_name}</h1>
 
-            {/* Category */}
             <div className="flex items-center gap-2">
               <span className="text-blue-600 font-medium text-sm bg-blue-50 px-3 py-1 rounded-full">
                 {item.category}
               </span>
             </div>
 
-            {/* Description */}
             <div>
               <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">Description</h3>
               <p className="text-gray-700 leading-relaxed">{item.description}</p>
             </div>
 
-            {/* Location */}
             <div className="flex items-start gap-3 bg-gray-100 rounded-xl p-4">
               <span className="text-2xl">📍</span>
               <div>
@@ -183,7 +196,6 @@ export default function ItemDetailPage() {
               </div>
             </div>
 
-            {/* Date */}
             <div className="flex items-start gap-3 bg-gray-100 rounded-xl p-4">
               <span className="text-2xl">📅</span>
               <div>
@@ -215,40 +227,80 @@ export default function ItemDetailPage() {
               </div>
             )}
             <div>
-              <p className="text-lg font-bold text-gray-800">{poster?.full_name || "Unknown"}</p>
-              <p className="text-sm text-gray-500">{poster?.department || "N/A"}</p>
-              <p className="text-sm text-gray-500">Semester {poster?.semester || "N/A"}</p>
-              <p className="text-sm text-gray-500">Student ID: {poster?.student_id || "N/A"}</p>
+              {/* ✅ Name always visible */}
+              <p className="text-lg font-bold text-gray-800">
+                {poster?.full_name || "Unknown"}
+              </p>
+              {/* <p className="text-sm text-gray-500">{poster?.department || "N/A"}</p>
+              <p className="text-sm text-gray-500">
+                Semester {poster?.semester || "N/A"}
+              </p> */}
+
+              {/* ✅ Student ID only visible to admin */}
+              {canSeeContact && (
+                <p className="text-sm text-gray-500">
+                  Student ID: {poster?.student_id || "N/A"}
+                </p>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Contact Section */}
-        <div className="mt-6 bg-white rounded-2xl shadow p-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Contact Information</h2>
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">📧</span>
-              <div>
-                <p className="text-xs text-gray-400 uppercase font-medium">Email</p>
-                <a href={`mailto:${item.contact_email}`} className="text-blue-700 hover:underline font-medium">
-                  {item.contact_email}
-                </a>
-              </div>
+        {/* ✅ Contact Section — Admin and Owner only */}
+        {canSeeContact ? (
+          <div className="mt-6 bg-white rounded-2xl shadow p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="text-xl font-bold text-gray-800">Contact Information</h2>
+              {isAdmin && (
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-semibold">
+                  👮 Admin View
+                </span>
+              )}
             </div>
-            {item.contact_phone && (
+            <div className="flex flex-col gap-3">
               <div className="flex items-center gap-3">
-                <span className="text-2xl">📱</span>
+                <span className="text-2xl">📧</span>
                 <div>
-                  <p className="text-xs text-gray-400 uppercase font-medium">Phone</p>
-                  <a href={`tel:${item.contact_phone}`} className="text-blue-700 hover:underline font-medium">
-                    {item.contact_phone}
+                  <p className="text-xs text-gray-400 uppercase font-medium">Email</p>
+                  <a href={`mailto:${item.contact_email}`} className="text-blue-700 hover:underline font-medium">
+                    {item.contact_email}
                   </a>
                 </div>
               </div>
-            )}
+              {item.contact_phone && (
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">📱</span>
+                  <div>
+                    <p className="text-xs text-gray-400 uppercase font-medium">Phone</p>
+                    <a href={`tel:${item.contact_phone}`} className="text-blue-700 hover:underline font-medium">
+                      {item.contact_phone}
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        ) : (
+          /* ✅ Message shown to regular users */
+          <div className="mt-6 bg-gray-50 border border-gray-200 rounded-2xl p-6 text-center">
+            {/* <span className="text-4xl mb-3 block">🔒</span>
+            <h2 className="text-lg font-bold text-gray-700 mb-2">
+              Contact Information Hidden
+            </h2>
+            <p className="text-gray-500 text-sm">
+              Contact details are only visible to admins.
+              To recover this item, please use the
+              <span className="text-blue-700 font-semibold"> Matches </span>
+              feature and submit a claim.
+            </p> */}
+            <button
+              onClick={() => router.push("/matches")}
+              className="mt-4 bg-blue-700 hover:bg-blue-800 text-white px-6 py-2.5 rounded-xl text-sm font-semibold transition"
+            >
+              🤖 Find Matches
+            </button>
+          </div>
+        )}
 
       </div>
     </div>

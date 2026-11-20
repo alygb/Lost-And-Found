@@ -181,7 +181,6 @@ export default function AdminPage() {
   };
 
 
-
   const handleEmailBothUsers = (claim: any) => {
     const email1 = claim.lost_user?.email;
     const email2 = claim.found_user?.email;
