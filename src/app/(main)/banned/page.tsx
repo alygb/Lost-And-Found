@@ -24,7 +24,7 @@ export default function BannedPage() {
           </p>
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
             <p className="text-red-600 text-sm font-medium">
-              If you believe this was a mistake, please contact the university administration.
+              If you believe this was a mistake, please contact the AJK Lost & Found administration.
             </p>
           </div>
           <button

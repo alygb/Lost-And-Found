@@ -58,7 +58,9 @@ export default function LocationPicker({
 }) {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
-  const [areas, setAreas] = useState<Area[]>([]);
+  // Areas are stored together with the district they belong to
+  const [areaList, setAreaList] = useState<{ districtId: number | null; list: Area[] }>({ districtId: null, list: [] });
+  const areas = value.districtId && areaList.districtId === value.districtId ? areaList.list : [];
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -74,16 +76,23 @@ export default function LocationPicker({
   }, []);
 
   useEffect(() => {
-    if (!value.districtId) {
-      setAreas([]);
-      return;
-    }
+    const districtId = value.districtId;
+    if (!districtId) return;
+    let cancelled = false;
     supabase
       .from("areas")
       .select("id,name,category")
-      .eq("district_id", value.districtId)
+      .eq("district_id", districtId)
       .order("name")
-      .then(({ data }) => setAreas(data || []));
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) console.error("Could not load areas:", error.message);
+        setAreaList({ districtId, list: data || [] });
+      });
+    // Ignore a slow answer for a district the user has already changed away from
+    return () => {
+      cancelled = true;
+    };
   }, [value.districtId]);
 
   const visibleDistricts = districts.filter(
@@ -138,7 +147,7 @@ export default function LocationPicker({
         onChange={(v) => onChange({ ...value, areaId: toNum(v) })}
       >
         <option value="">
-          {value.districtId && areas.length === 0 ? "No areas listed" : "Select area"}
+          {!value.districtId ? "Select district first" : areas.length === 0 ? "No areas listed yet" : "Select area"}
         </option>
         {areas.map((a) => (
           <option key={a.id} value={a.id}>

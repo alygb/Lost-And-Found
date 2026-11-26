@@ -1,4 +1,4 @@
-import Navbar from "@/components/layout/Navbar";
+import AppShell from "@/components/layout/AppShell";
 import Footer from "@/components/layout/Footer";
 import BanChecker from "@/components/layouts/BanChecker";
 
@@ -8,11 +8,10 @@ export default function MainLayout({
   children: React.ReactNode;
 }) {
   return (
-    <>
-      <Navbar />
+    <AppShell>
       <BanChecker />
-      <main>{children}</main>
+      {children}
       <Footer />
-    </>
+    </AppShell>
   );
 }

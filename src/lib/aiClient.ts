@@ -43,9 +43,37 @@ export async function analyzeImage(file: File): Promise<AiResult | null> {
         Authorization: `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({ image }),
+      signal: AbortSignal.timeout(35000),
     });
     if (!res.ok) return null;
     return await res.json();
+  } catch {
+    return null;
+  }
+}
+/** How sure the detector must be before we ask the user about a photo. */
+export const AI_IMAGE_THRESHOLD = 0.5;
+
+/**
+ * Asks the server whether a photo looks AI-generated.
+ * Returns the 0–1 score, or null when the check is unavailable (no keys, offline, error).
+ */
+export async function detectAiImage(file: File): Promise<number | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+    const body = new FormData();
+    body.append("image", file);
+    const res = await fetch("/api/ai/detect-image", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      body,
+      // If the check takes too long the photo is marked "unchecked" and the report can still be posted
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.available && typeof data.score === "number" ? data.score : null;
   } catch {
     return null;
   }

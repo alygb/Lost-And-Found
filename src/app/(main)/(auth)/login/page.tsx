@@ -2,256 +2,182 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, ArrowRight, Lock, Mail, Send } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { validateEmail } from "@/lib/validation";
+import AuthShell, { Divider, Field, FormAlert, GoogleButton, SubmitButton } from "@/components/auth/AuthShell";
+
+/** Supabase error text → something a user understands. */
+const friendly = (msg: string) => {
+  const m = msg.toLowerCase();
+  if (m.includes("invalid login credentials")) return "Email or password is incorrect. Please try again.";
+  if (m.includes("email not confirmed")) return "Please confirm your email first. Check your inbox for the link.";
+  if (m.includes("rate limit") || m.includes("too many")) return "Too many attempts. Please wait a minute and try again.";
+  if (m.includes("failed to fetch") || m.includes("network")) return "Can't reach the server. Check your internet connection.";
+  return msg;
+};
 
 export default function LoginPage() {
   const router = useRouter();
+  const [mode, setMode] = useState<"login" | "forgot">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
+  const [notice, setNotice] = useState("");
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const errors = {
+    email: validateEmail(email),
+    password: mode === "login" && !password ? "Please enter your password." : "",
+  };
+  const show = (k: keyof typeof errors) => ((touched[k] || submitted) && errors[k]) || "";
+
+  const switchMode = (m: "login" | "forgot") => {
+    setMode(m);
+    setError("");
+    setNotice("");
+    setSubmitted(false);
+    setTouched({});
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSubmitted(true);
+    if (errors.email || errors.password) return;
+
     setLoading(true);
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email: formData.email,
-      password: formData.password,
-    });
-
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     if (error) {
-      setError(error.message);
+      setError(friendly(error.message));
       setLoading(false);
       return;
     }
-
     router.push("/dashboard");
-    setLoading(false);
   };
 
-  // ✅ Google login
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setNotice("");
+    setSubmitted(true);
+    if (errors.email) return;
+
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setLoading(false);
+    if (error) return setError(friendly(error.message));
+    setNotice(`If an account exists for ${email.trim()}, a reset link is on its way. Check your inbox and spam folder.`);
+  };
+
   const handleGoogleLogin = async () => {
     setError("");
     setGoogleLoading(true);
-
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/dashboard`,
-      },
+      options: { redirectTo: `${window.location.origin}/dashboard` },
     });
-
     if (error) {
-      setError(error.message);
+      setError(friendly(error.message));
       setGoogleLoading(false);
     }
-    // On success the browser redirects to Google, so no further code runs here
+    // On success the browser redirects to Google
   };
 
+  if (mode === "forgot") {
+    return (
+      <AuthShell
+        title="Reset your password"
+        subtitle="Enter your account email and we'll send you a link to choose a new password."
+        footer={
+          <button onClick={() => switchMode("login")} className="inline-flex items-center gap-1.5 font-semibold text-brand hover:underline">
+            <ArrowLeft className="h-4 w-4" /> Back to sign in
+          </button>
+        }
+      >
+        <form noValidate onSubmit={handleForgot} className="space-y-5">
+          {error && <FormAlert>{error}</FormAlert>}
+          {notice && <FormAlert tone="success">{notice}</FormAlert>}
+          <Field
+            label="Email address"
+            icon={Mail}
+            name="email"
+            type="text"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="name@gmail.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+            error={show("email")}
+            autoFocus
+          />
+          <SubmitButton loading={loading} loadingText="Sending link…">
+            <Send className="h-4 w-4" /> Send reset link
+          </SubmitButton>
+        </form>
+      </AuthShell>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex">
+    <AuthShell
+      title="Welcome back 👋"
+      subtitle="Sign in to track your reports and claims."
+      footer={
+        <>
+          Don&apos;t have an account?{" "}
+          <Link href="/register" className="font-bold text-brand hover:underline">
+            Create one
+          </Link>
+        </>
+      }
+    >
+      <GoogleButton onClick={handleGoogleLogin} loading={googleLoading} />
+      <Divider text="or sign in with email" />
 
-      {/* Left Side — Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-linear-to-br from-blue-900 via-blue-800 to-blue-600 flex-col items-center justify-center px-12 relative overflow-hidden">
-
-        {/* Background circles (fixed classes) */}
-        <div className="absolute -top-20 -left-20 w-80 h-80 bg-blue-500 opacity-20 rounded-full"></div>
-        <div className="absolute -bottom-16 -right-16 w-64 h-64 bg-yellow-400 opacity-10 rounded-full"></div>
-        <div className="absolute top-1/2 -left-10 w-40 h-40 bg-blue-300 opacity-10 rounded-full"></div>
-
-        {/* Content */}
-        <div className="relative z-10 text-center text-white">
-          <div className="w-24 h-24 bg-yellow-400 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
-            <span className="text-5xl">🎓</span>
-          </div>
-          <h1 className="text-4xl font-bold mb-3">Lost & Found</h1>
-          <p className="text-blue-200 text-lg mb-8">University Item Recovery System</p>
-
-          <div className="flex flex-col gap-4 text-left mt-8">
-            <div className="flex items-center gap-3 bg-white/10 rounded-xl px-5 py-3">
-              <span className="text-2xl">🤖</span>
-              <div>
-                <p className="font-semibold text-sm">AI-Powered Matching</p>
-                <p className="text-blue-200 text-xs">Smart algorithm finds your items</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 bg-white/10 rounded-xl px-5 py-3">
-              <span className="text-2xl">🔔</span>
-              <div>
-                <p className="font-semibold text-sm">Real-time Notifications</p>
-                <p className="text-blue-200 text-xs">Get notified when items are found</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 bg-white/10 rounded-xl px-5 py-3">
-              <span className="text-2xl">🔐</span>
-              <div>
-                <p className="font-semibold text-sm">Secure & Verified</p>
-                <p className="text-blue-200 text-xs">Admin verified item handover</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Right Side — Login Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-12 bg-gray-50">
-        <div className="w-full max-w-md">
-
-          {/* Mobile Logo */}
-          <div className="lg:hidden text-center mb-8">
-            <div className="w-16 h-16 bg-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-3">
-              <span className="text-3xl">🎓</span>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-800">Lost & Found</h1>
-          </div>
-
-          {/* Form Header */}
-          <div className="mb-8">
-            <h2 className="text-3xl font-bold text-gray-800">Welcome back!</h2>
-            <p className="text-gray-500 mt-1">Sign in to your account to continue</p>
-          </div>
-
-          {/* Form Card */}
-          <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100">
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm flex items-center gap-2 mb-5">
-                <span>⚠️</span>
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* ✅ Google Button */}
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={googleLoading}
-              className="w-full flex items-center justify-center gap-3 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-semibold py-3 rounded-xl transition disabled:opacity-50"
-            >
-              {googleLoading ? (
-                <svg className="animate-spin h-5 w-5 text-gray-500" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                </svg>
-              ) : (
-                <svg className="h-5 w-5" viewBox="0 0 48 48">
-                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                </svg>
-              )}
-              {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
+      <form noValidate onSubmit={handleLogin} className="space-y-5">
+        {error && <FormAlert>{error}</FormAlert>}
+        <Field
+          label="Email address"
+          icon={Mail}
+          name="email"
+          type="text"
+          inputMode="email"
+          autoComplete="email"
+          placeholder="name@gmail.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+          error={show("email")}
+        />
+        <Field
+          label="Password"
+          icon={Lock}
+          name="password"
+          password
+          autoComplete="current-password"
+          placeholder="Your password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onBlur={() => setTouched((t) => ({ ...t, password: true }))}
+          error={show("password")}
+          right={
+            <button type="button" onClick={() => switchMode("forgot")} className="text-xs font-semibold text-brand hover:underline">
+              Forgot password?
             </button>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3 my-5">
-              <div className="flex-1 h-px bg-gray-200"></div>
-              <p className="text-gray-400 text-xs">OR SIGN IN WITH EMAIL</p>
-              <div className="flex-1 h-px bg-gray-200"></div>
-            </div>
-
-            <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-
-              {/* Email */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Email Address
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">📧</span>
-                  <input
-                    type="email"
-                    name="email"
-                    placeholder="your@email.com"
-                    value={formData.email}
-                    onChange={handleChange}
-                    required
-                    className="w-full border border-gray-200 rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 text-gray-800 placeholder-gray-400 transition"
-                  />
-                </div>
-              </div>
-
-              {/* Password */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Password
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔒</span>
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    name="password"
-                    placeholder="••••••••"
-                    value={formData.password}
-                    onChange={handleChange}
-                    required
-                    className="w-full border border-gray-200 rounded-xl pl-10 pr-12 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 text-gray-800 placeholder-gray-400 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm"
-                  >
-                    {showPassword ? "🙈" : "👁️"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Remember + Forgot */}
-              <div className="flex items-center justify-between text-sm">
-                <label className="flex items-center gap-2 text-gray-500 cursor-pointer">
-                  <input type="checkbox" className="rounded border-gray-300 text-blue-600" />
-                  Remember me
-                </label>
-                <a href="#" className="text-blue-600 hover:text-blue-800 font-medium hover:underline">
-                  Forgot password?
-                </a>
-              </div>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-blue-700 hover:bg-blue-800 text-white font-semibold py-3.5 rounded-xl transition text-base disabled:opacity-50 shadow-lg shadow-blue-200 mt-2"
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                    </svg>
-                    Signing in...
-                  </span>
-                ) : "Sign In →"}
-              </button>
-
-            </form>
-
-            {/* Register Link */}
-            <p className="text-center text-gray-500 text-sm mt-6">
-              Don't have an account?{" "}
-              <Link href="/register" className="text-blue-700 hover:text-blue-900 font-semibold hover:underline">
-                Create one free →
-              </Link>
-            </p>
-
-          </div>
-
-        </div>
-      </div>
-
-    </div>
+          }
+        />
+        <SubmitButton loading={loading} loadingText="Signing in…">
+          Sign in <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+        </SubmitButton>
+      </form>
+    </AuthShell>
   );
 }

@@ -1,96 +1,50 @@
 import { NextRequest, NextResponse } from "next/server";
+import { adminDb, userFromRequest } from "@/lib/server/core";
+import { FOUND_FIELDS, LOST_FIELDS, rankMatches, type MatchItem } from "@/lib/server/matching";
 
-function calculateSimilarity(str1: string, str2: string): number {
-  if (!str1 || !str2) return 0;
-  const s1 = str1.toLowerCase().trim();
-  const s2 = str2.toLowerCase().trim();
-  if (s1 === s2) return 100;
+/**
+ * Smart matching for one of the caller's lost items.
+ * Body: { lostItemId }. The server loads the lost item (must belong to the caller) and all available
+ * found items itself, so results can't be faked from the browser.
+ */
 
-  const words1 = s1.split(/\s+/);
-  const words2 = s2.split(/\s+/);
-  const commonWords = words1.filter(w => words2.includes(w) && w.length > 2);
-  const totalWords = Math.max(words1.length, words2.length);
-  return Math.round((commonWords.length / totalWords) * 100);
-}
+export const maxDuration = 60;
 
-function matchItems(lostItem: any, foundItem: any) {
-  let score = 0;
-  const reasons: string[] = [];
-
-  // Category match (30 points)
-  if (lostItem.category && foundItem.category) {
-    if (lostItem.category === foundItem.category) {
-      score += 30;
-      reasons.push("Same category");
-    }
-  }
-
-  // Item name similarity (25 points)
-  const nameSimilarity = calculateSimilarity(lostItem.item_name, foundItem.item_name);
-  if (nameSimilarity > 0) {
-    const nameScore = Math.round((nameSimilarity / 100) * 25);
-    score += nameScore;
-    if (nameScore > 10) reasons.push("Similar item name");
-  }
-
-  // Description similarity (25 points)
-  const descSimilarity = calculateSimilarity(lostItem.description, foundItem.description);
-  if (descSimilarity > 0) {
-    const descScore = Math.round((descSimilarity / 100) * 25);
-    score += descScore;
-    if (descScore > 10) reasons.push("Similar description");
-  }
-
-  // Location similarity (20 points)
-  const locSimilarity = calculateSimilarity(lostItem.location, foundItem.location);
-  if (locSimilarity > 0) {
-    const locScore = Math.round((locSimilarity / 100) * 20);
-    score += locScore;
-    if (locScore > 5) reasons.push("Same or nearby location");
-  }
-
-  // Date proximity bonus (10 points)
-  if (lostItem.date_lost && foundItem.date_found) {
-    const lostDate = new Date(lostItem.date_lost).getTime();
-    const foundDate = new Date(foundItem.date_found).getTime();
-    const diffDays = Math.abs((foundDate - lostDate) / (1000 * 60 * 60 * 24));
-    if (diffDays <= 1) { score += 10; reasons.push("Found same day"); }
-    else if (diffDays <= 3) { score += 7; reasons.push("Found within 3 days"); }
-    else if (diffDays <= 7) { score += 5; reasons.push("Found within a week"); }
-    else if (diffDays <= 30) { score += 2; reasons.push("Found within a month"); }
-  }
-
-  // Cap at 100
-  score = Math.min(score, 100);
-
-  const reason = reasons.length > 0
-    ? reasons.join(", ")
-    : "Partial similarity detected";
-
-  return { score, reason };
-}
+// Simple per-user rate limit (each run makes several AI calls)
+const hits = new Map<string, number[]>();
+const LIMIT = 15;
+const WINDOW_MS = 10 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
   try {
-    const { lostItem, foundItems } = await req.json();
+    const user = await userFromRequest(req);
+    if (!user) return NextResponse.json({ error: "signin", matches: [] }, { status: 401 });
 
-    if (!lostItem || !foundItems || foundItems.length === 0) {
-      return NextResponse.json({ matches: [] });
+    const now = Date.now();
+    const recent = (hits.get(user.id) || []).filter((t) => now - t < WINDOW_MS);
+    if (recent.length >= LIMIT) return NextResponse.json({ error: "Too many scans. Please wait a few minutes.", matches: [] }, { status: 429 });
+    hits.set(user.id, [...recent, now]);
+
+    const { lostItemId } = await req.json().catch(() => ({}));
+    if (typeof lostItemId !== "string" || !/^[0-9a-f-]{36}$/i.test(lostItemId)) {
+      return NextResponse.json({ error: "bad request", matches: [] }, { status: 400 });
     }
 
-    const matches = foundItems
-      .map((foundItem: any) => {
-        const { score, reason } = matchItems(lostItem, foundItem);
-        return { id: foundItem.id, score, reason };
-      })
-      .filter((m: any) => m.score >= 30)
-      .sort((a: any, b: any) => b.score - a.score);
+    const { data: lost } = await adminDb.from("lost_items").select(LOST_FIELDS).eq("id", lostItemId).maybeSingle<MatchItem>();
+    if (!lost || lost.user_id !== user.id) return NextResponse.json({ error: "not found", matches: [] }, { status: 404 });
 
-    console.log("Smart matching results:", matches);
+    const { data: found } = await adminDb
+      .from("found_items")
+      .select(FOUND_FIELDS)
+      .eq("status", "available")
+      .order("created_at", { ascending: false })
+      .limit(300)
+      .returns<MatchItem[]>();
+
+    const matches = await rankMatches(lost, "lost", found || []);
     return NextResponse.json({ matches });
-
-  } catch (error: any) {
+  } catch (error) {
     console.error("Matching error:", error);
-    return NextResponse.json({ matches: [], error: error.message });
+    return NextResponse.json({ matches: [], error: "Matching failed" }, { status: 500 });
   }
 }

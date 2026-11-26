@@ -2,6 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { AiTag } from "@/components/report/AiImageDialog";
+import { Bot } from "lucide-react";
+import ItemComments from "@/components/item/ItemComments";
+import LocationMapView from "@/components/map/LocationMapView";
+import { isMapLocation } from "@/lib/mapLocation";
 import { useParams, useRouter } from "next/navigation";
 
 export default function ItemDetailPage() {
@@ -14,6 +19,7 @@ export default function ItemDetailPage() {
   const [itemType, setItemType] = useState<"lost" | "found">("lost");
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState("");
+  const [adminIds, setAdminIds] = useState<string[]>([]);
 
   useEffect(() => {
     checkUserAndFetchItem();
@@ -32,6 +38,9 @@ export default function ItemDetailPage() {
       if (profile?.role === "admin") setIsAdmin(true);
     }
     fetchItem();
+    // For the "Admin" badge on comments
+    const { data: admins } = await supabase.from("public_profiles").select("id").eq("is_admin", true);
+    setAdminIds((admins || []).map((a: { id: string }) => a.id));
   };
 
   const fetchItem = async () => {
@@ -66,7 +75,7 @@ export default function ItemDetailPage() {
 
   const fetchPoster = async (userId: string) => {
     const { data } = await supabase
-      .from("profiles")
+      .from("public_profiles")
       .select("*")
       .eq("id", userId)
       .single();
@@ -125,6 +134,9 @@ export default function ItemDetailPage() {
                     alt={item.item_name}
                     className="w-full h-full object-cover"
                   />
+                  {item.ai_image_urls?.includes(images[currentImage]) && (
+                    <AiTag className="absolute left-3 top-3 !px-3 !py-1 !text-xs" />
+                  )}
                   {images.length > 1 && (
                     <>
                       <button
@@ -148,9 +160,12 @@ export default function ItemDetailPage() {
                       <button
                         key={i}
                         onClick={() => setCurrentImage(i)}
-                        className={`shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition ${i === currentImage ? "border-blue-500" : "border-transparent"}`}
+                        className={`relative shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition ${i === currentImage ? "border-blue-500" : "border-transparent"}`}
                       >
                         <img src={img} alt={`thumbnail ${i}`} className="w-full h-full object-cover" />
+                        {item.ai_image_urls?.includes(img) && (
+                          <span className="absolute bottom-0.5 left-0.5 rounded bg-violet-600 px-1 text-[8px] font-bold text-white">AI</span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -185,8 +200,21 @@ export default function ItemDetailPage() {
 
             <div>
               <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">Description</h3>
-              <p className="text-gray-700 leading-relaxed">{item.description}</p>
+              <p className="text-gray-700 leading-relaxed whitespace-pre-line">{item.description}</p>
             </div>
+
+            {item.ai_image_urls?.length > 0 && (
+              <div className="flex gap-3 rounded-xl border border-violet-200 bg-violet-50 p-4">
+                <Bot className="mt-0.5 h-5 w-5 shrink-0 text-violet-600" />
+                <div>
+                  <p className="text-sm font-bold text-violet-900">
+                    {item.ai_image_urls.length === images.length ? "The photos" : "Some photos"} of this item are AI-generated
+                  </p>
+                  <p className="mt-0.5 text-xs text-violet-700">They are not original photos. The reporter explained why:</p>
+                  {item.ai_image_reason && <p className="mt-2 text-sm italic text-violet-900">&ldquo;{item.ai_image_reason}&rdquo;</p>}
+                </div>
+              </div>
+            )}
 
             <div className="flex items-start gap-3 bg-gray-100 rounded-xl p-4">
               <span className="text-2xl">📍</span>
@@ -231,17 +259,6 @@ export default function ItemDetailPage() {
               <p className="text-lg font-bold text-gray-800">
                 {poster?.full_name || "Unknown"}
               </p>
-              {/* <p className="text-sm text-gray-500">{poster?.department || "N/A"}</p>
-              <p className="text-sm text-gray-500">
-                Semester {poster?.semester || "N/A"}
-              </p> */}
-
-              {/* ✅ Student ID only visible to admin */}
-              {canSeeContact && (
-                <p className="text-sm text-gray-500">
-                  Student ID: {poster?.student_id || "N/A"}
-                </p>
-              )}
             </div>
           </div>
         </div>
@@ -302,6 +319,24 @@ export default function ItemDetailPage() {
           </div>
         )}
 
+        {isMapLocation(item.map_location) && (
+          <div className="mt-10">
+            <LocationMapView
+              value={item.map_location}
+              accent={itemType === "lost" ? "#f43f5e" : "#10b981"}
+              title={itemType === "lost" ? "Where it was lost" : "Where it was found"}
+            />
+          </div>
+        )}
+
+        <ItemComments
+          itemId={item.id}
+          itemType={itemType}
+          ownerId={item.user_id}
+          currentUserId={currentUserId}
+          isAdmin={isAdmin}
+          adminIds={adminIds}
+        />
       </div>
     </div>
   );

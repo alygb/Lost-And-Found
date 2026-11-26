@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { validateEmail } from "@/lib/validation";
 import { useRouter } from "next/navigation";
 
 export default function AdminLoginPage() {
@@ -14,11 +15,17 @@ export default function AdminLoginPage() {
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    const problem = validateEmail(email) || (password ? "" : "Please enter your password.");
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setLoading(true);
 
     // Step 1 — Sign in with Supabase
     const { data, error: signInError } = await supabase.auth.signInWithPassword({
-      email,
+      email: email.trim(),
       password,
     });
 
@@ -64,7 +71,7 @@ export default function AdminLoginPage() {
             <span className="text-4xl">⭐</span>
           </div>
           <h1 className="text-3xl font-bold text-white">Admin Portal</h1>
-          <p className="text-blue-300 mt-2">CampusLostFound Management System</p>
+          <p className="text-blue-300 mt-2">AJK Lost & Found Management System</p>
           <div className="w-16 h-1 bg-yellow-400 mx-auto mt-3 rounded-full"></div>
         </div>
 
@@ -74,7 +81,7 @@ export default function AdminLoginPage() {
             🔐 Admin Sign In
           </h2>
 
-          <form onSubmit={handleAdminLogin} className="flex flex-col gap-5">
+          <form noValidate onSubmit={handleAdminLogin} className="flex flex-col gap-5">
 
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
@@ -88,7 +95,7 @@ export default function AdminLoginPage() {
               </label>
               <input
                 type="email"
-                placeholder="admin@university.edu"
+                placeholder="admin@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

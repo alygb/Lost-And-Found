@@ -2,381 +2,215 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import { ArrowRight, Check, Lock, Mail, User } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { validateEmail, validateFullName, validatePassword } from "@/lib/validation";
+import AuthShell, { Divider, Field, FormAlert, GoogleButton, SubmitButton } from "@/components/auth/AuthShell";
+
+const friendly = (msg: string) => {
+  const m = msg.toLowerCase();
+  if (m.includes("already registered") || m.includes("already exists")) return "An account with this email already exists. Try signing in instead.";
+  if (m.includes("rate limit") || m.includes("too many")) return "Too many attempts. Please wait a minute and try again.";
+  if (m.includes("failed to fetch") || m.includes("network")) return "Can't reach the server. Check your internet connection.";
+  return msg;
+};
+
+/** 0–4 score with a label, for the strength bar. */
+function strength(pw: string) {
+  let s = 0;
+  if (pw.length >= 8) s++;
+  if (pw.length >= 12) s++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s++;
+  if (/\d/.test(pw) && /[^A-Za-z0-9]/.test(pw)) s++;
+  else if (/\d/.test(pw)) s += 0.5;
+  const score = Math.min(4, Math.round(s));
+  return {
+    score,
+    label: ["Too weak", "Weak", "Fair", "Good", "Strong"][score],
+    color: ["bg-rose-500", "bg-rose-500", "bg-amber-500", "bg-blue-500", "bg-emerald-500"][score],
+    text: ["text-rose-600", "text-rose-600", "text-amber-600", "text-blue-600", "text-emerald-600"][score],
+  };
+}
 
 export default function RegisterPage() {
   const router = useRouter();
+  const [form, setForm] = useState({ fullName: "", email: "", password: "", confirmPassword: "" });
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [formData, setFormData] = useState({
-    fullName: "",
-    email: "",
-    studentId: "",
-    department: "",
-    semester: "",
-    password: "",
-    confirmPassword: "",
-  });
+  const [notice, setNotice] = useState("");
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const touch = (k: string) => () => setTouched((t) => ({ ...t, [k]: true }));
+
+  const errors = {
+    fullName: validateFullName(form.fullName),
+    email: validateEmail(form.email),
+    password: validatePassword(form.password),
+    confirmPassword: !form.confirmPassword
+      ? "Please type your password again."
+      : form.confirmPassword !== form.password
+        ? "The passwords do not match."
+        : "",
   };
+  const show = (k: keyof typeof errors) => ((touched[k] || submitted) && errors[k]) || "";
+  const pw = strength(form.password);
+  const rules = [
+    { ok: form.password.length >= 8, text: "8+ characters" },
+    { ok: /[A-Za-z]/.test(form.password), text: "A letter" },
+    { ok: /\d/.test(form.password), text: "A number" },
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match!");
-      return;
-    }
+    setSubmitted(true);
+    if (Object.values(errors).some(Boolean)) return;
 
     setLoading(true);
-
     const { data, error } = await supabase.auth.signUp({
-      email: formData.email,
-      password: formData.password,
-      options: {
-        data: {
-          full_name: formData.fullName,
-          student_id: formData.studentId,
-          department: formData.department,
-          semester: formData.semester,
-        },
-      },
+      email: form.email.trim(),
+      password: form.password,
+      options: { data: { full_name: form.fullName.trim() } },
     });
 
     if (error) {
-      setError(error.message);
+      setError(friendly(error.message));
       setLoading(false);
       return;
     }
 
     if (data.user) {
-      await supabase.from("profiles").upsert({
-        id: data.user.id,
-        email: formData.email,
-        full_name: formData.fullName,
-        student_id: formData.studentId,
-        department: formData.department,
-        semester: formData.semester,
-      });
-      router.push("/dashboard");
+      await supabase.from("profiles").upsert({ id: data.user.id, email: form.email.trim(), full_name: form.fullName.trim() });
     }
-
+    if (data.session) {
+      router.push("/dashboard");
+      return;
+    }
+    // Email confirmation is switched on in Supabase
+    setNotice("Account created! Check your inbox and click the confirmation link, then sign in.");
     setLoading(false);
   };
 
-  // ✅ Continue with Google
   const handleGoogleSignup = async () => {
     setError("");
     setGoogleLoading(true);
-
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/dashboard`,
-      },
+      options: { redirectTo: `${window.location.origin}/dashboard` },
     });
-
     if (error) {
-      setError(error.message);
+      setError(friendly(error.message));
       setGoogleLoading(false);
     }
-    // On success the browser redirects to Google
   };
 
   return (
-    <div className="min-h-screen flex">
+    <AuthShell
+      title="Create your account"
+      subtitle="Join free and start recovering lost items across AJK."
+      footer={
+        <>
+          Already have an account?{" "}
+          <Link href="/login" className="font-bold text-brand hover:underline">
+            Sign in
+          </Link>
+        </>
+      }
+    >
+      <GoogleButton onClick={handleGoogleSignup} loading={googleLoading} />
+      <Divider text="or sign up with email" />
 
-      {/* Left Side — Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-linear-to-br from-blue-900 via-blue-800 to-blue-600 flex-col items-center justify-center px-12 relative overflow-hidden">
+      <form noValidate onSubmit={handleSubmit} className="space-y-5">
+        {error && <FormAlert>{error}</FormAlert>}
+        {notice && <FormAlert tone="success">{notice}</FormAlert>}
 
-        {/* Background decorations (fixed classes) */}
-        <div className="absolute -top-20 -left-20 w-80 h-80 bg-blue-500 opacity-20 rounded-full"></div>
-        <div className="absolute -bottom-16 -right-16 w-64 h-64 bg-yellow-400 opacity-10 rounded-full"></div>
-        <div className="absolute top-1/3 -right-10 w-40 h-40 bg-blue-300 opacity-10 rounded-full"></div>
-
-        {/* Content */}
-        <div className="relative z-10 text-center text-white">
-          <div className="w-24 h-24 bg-yellow-400 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl">
-            <span className="text-5xl">🎓</span>
-          </div>
-          <h1 className="text-4xl font-bold mb-3">Join Lost & Found</h1>
-          <p className="text-blue-200 text-lg mb-8">University Item Recovery System</p>
-
-          {/* Steps */}
-          <div className="flex flex-col gap-4 text-left mt-6">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm shrink-0">1</div>
-              <div>
-                <p className="font-semibold text-sm">Create your account</p>
-                <p className="text-blue-200 text-xs">Fill in your university details</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm shrink-0">2</div>
-              <div>
-                <p className="font-semibold text-sm">Report lost or found items</p>
-                <p className="text-blue-200 text-xs">Upload photos and description</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm shrink-0">3</div>
-              <div>
-                <p className="font-semibold text-sm">AI finds matches for you</p>
-                <p className="text-blue-200 text-xs">Smart algorithm connects owners</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center font-bold text-sm shrink-0">4</div>
-              <div>
-                <p className="font-semibold text-sm">Collect from Admin Office</p>
-                <p className="text-blue-200 text-xs">Safe and verified handover</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Right Side — Register Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-8 bg-gray-50 overflow-y-auto">
-        <div className="w-full max-w-md">
-
-          {/* Mobile Logo */}
-          <div className="lg:hidden text-center mb-6">
-            <div className="w-16 h-16 bg-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-3">
-              <span className="text-3xl">🎓</span>
-            </div>
-            <h1 className="text-2xl font-bold text-gray-800">Lost & Found</h1>
-          </div>
-
-          {/* Form Header */}
-          <div className="mb-6">
-            <h2 className="text-3xl font-bold text-gray-800">Create Account</h2>
-            <p className="text-gray-500 mt-1">Join the university lost & found system</p>
-          </div>
-
-          {/* Form Card */}
-          <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100">
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm flex items-center gap-2 mb-5">
-                <span>⚠️</span>
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* ✅ Google Button */}
-            <button
-              type="button"
-              onClick={handleGoogleSignup}
-              disabled={googleLoading}
-              className="w-full flex items-center justify-center gap-3 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 font-semibold py-3 rounded-xl transition disabled:opacity-50"
-            >
-              {googleLoading ? (
-                <svg className="animate-spin h-5 w-5 text-gray-500" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                </svg>
-              ) : (
-                <svg className="h-5 w-5" viewBox="0 0 48 48">
-                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                </svg>
-              )}
-              {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
-            </button>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3 my-5">
-              <div className="flex-1 h-px bg-gray-200"></div>
-              <p className="text-gray-400 text-xs">OR SIGN UP WITH EMAIL</p>
-              <div className="flex-1 h-px bg-gray-200"></div>
-            </div>
-
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-
-              {/* Full Name */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Full Name
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">👤</span>
-                  <input
-                    type="text"
-                    name="fullName"
-                    placeholder="Your Full Name"
-                    value={formData.fullName}
-                    onChange={handleChange}
-                    required
-                    className="w-full border border-gray-200 rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 text-gray-800 placeholder-gray-400 transition"
-                  />
-                </div>
-              </div>
-
-              {/* Email */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Email Address
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">📧</span>
-                  <input
-                    type="email"
-                    name="email"
-                    placeholder="your@email.com"
-                    value={formData.email}
-                    onChange={handleChange}
-                    required
-                    className="w-full border border-gray-200 rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 text-gray-800 placeholder-gray-400 transition"
-                  />
-                </div>
-              </div>
-
-              {/* Department + Semester side by side */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                    Department
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🏫</span>
-                    <input
-                      type="text"
-                      name="department"
-                      placeholder="e.g. SE"
-                      value={formData.department}
-                      onChange={handleChange}
-                      required
-                      className="w-full border border-gray-200 rounded-xl pl-10 pr-3 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 text-gray-800 placeholder-gray-400 transition text-sm"
-                    />
+        <Field
+          label="Full name"
+          icon={User}
+          name="fullName"
+          autoComplete="name"
+          placeholder="e.g. Ali Khan"
+          maxLength={50}
+          value={form.fullName}
+          onChange={set("fullName")}
+          onBlur={touch("fullName")}
+          error={show("fullName")}
+        />
+        <Field
+          label="Email address"
+          icon={Mail}
+          name="email"
+          type="text"
+          inputMode="email"
+          autoComplete="email"
+          placeholder="name@gmail.com"
+          value={form.email}
+          onChange={set("email")}
+          onBlur={touch("email")}
+          error={show("email")}
+        />
+        <Field
+          label="Password"
+          icon={Lock}
+          name="password"
+          password
+          autoComplete="new-password"
+          placeholder="8+ characters, letters and numbers"
+          value={form.password}
+          onChange={set("password")}
+          onBlur={touch("password")}
+          error={show("password")}
+          hint={
+            form.password ? (
+              <div className="animate-fade-down mt-2.5">
+                <div className="flex items-center gap-3">
+                  <div className="flex flex-1 gap-1">
+                    {[1, 2, 3, 4].map((i) => (
+                      <span key={i} className={`h-1.5 flex-1 rounded-full transition-colors duration-300 ${pw.score >= i ? pw.color : "bg-slate-200"}`} />
+                    ))}
                   </div>
+                  <span className={`w-16 text-right text-xs font-bold ${pw.text}`}>{pw.label}</span>
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                    Semester
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">📚</span>
-                    <select
-                      name="semester"
-                      value={formData.semester}
-                      onChange={handleChange}
-                      required
-                      title="semester"
-                      className="w-full border border-gray-200 rounded-xl pl-10 pr-3 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 text-gray-800 transition text-sm appearance-none"
-                    >
-                      <option value="">Select</option>
-                      <option value="1">1st</option>
-                      <option value="2">2nd</option>
-                      <option value="3">3rd</option>
-                      <option value="4">4th</option>
-                      <option value="5">5th</option>
-                      <option value="6">6th</option>
-                      <option value="7">7th</option>
-                      <option value="8">8th</option>
-                    </select>
-                  </div>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                  {rules.map((r) => (
+                    <span key={r.text} className={`flex items-center gap-1 text-xs transition-colors ${r.ok ? "text-emerald-600" : "text-slate-400"}`}>
+                      <Check className={`h-3.5 w-3.5 transition-transform ${r.ok ? "scale-100" : "scale-75 opacity-50"}`} /> {r.text}
+                    </span>
+                  ))}
                 </div>
               </div>
+            ) : null
+          }
+        />
+        <Field
+          label="Confirm password"
+          icon={Lock}
+          name="confirmPassword"
+          password
+          autoComplete="new-password"
+          placeholder="Type it again"
+          value={form.confirmPassword}
+          onChange={set("confirmPassword")}
+          onBlur={touch("confirmPassword")}
+          error={show("confirmPassword")}
+          hint={
+            form.confirmPassword && form.confirmPassword === form.password ? (
+              <p className="animate-fade-down mt-1.5 flex items-center gap-1 text-xs font-medium text-emerald-600">
+                <Check className="h-3.5 w-3.5" /> Passwords match
+              </p>
+            ) : null
+          }
+        />
 
-              {/* Password */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Password
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔒</span>
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    name="password"
-                    placeholder="Min 6 characters"
-                    value={formData.password}
-                    onChange={handleChange}
-                    required
-                    className="w-full border border-gray-200 rounded-xl pl-10 pr-12 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 text-gray-800 placeholder-gray-400 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? "🙈" : "👁️"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Confirm Password */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Confirm Password
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔒</span>
-                  <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    name="confirmPassword"
-                    placeholder="Re-enter password"
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    required
-                    className="w-full border border-gray-200 rounded-xl pl-10 pr-12 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 text-gray-800 placeholder-gray-400 transition"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showConfirmPassword ? "🙈" : "👁️"}
-                  </button>
-                </div>
-                {formData.confirmPassword && (
-                  <p className={`text-xs mt-1 ${formData.password === formData.confirmPassword ? "text-green-500" : "text-red-500"}`}>
-                    {formData.password === formData.confirmPassword ? "✅ Passwords match" : "❌ Passwords don't match"}
-                  </p>
-                )}
-              </div>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-blue-700 hover:bg-blue-800 text-white font-semibold py-3.5 rounded-xl transition text-base disabled:opacity-50 shadow-lg shadow-blue-200 mt-2"
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                    </svg>
-                    Creating Account...
-                  </span>
-                ) : "Create Account →"}
-              </button>
-
-            </form>
-
-            {/* Login Link */}
-            <p className="text-center text-gray-500 text-sm mt-6">
-              Already have an account?{" "}
-              <Link href="/login" className="text-blue-700 hover:text-blue-900 font-semibold hover:underline">
-                Sign in →
-              </Link>
-            </p>
-
-          </div>
-
-        </div>
-      </div>
-
-    </div>
+        <SubmitButton loading={loading} loadingText="Creating account…">
+          Create account <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+        </SubmitButton>
+        <p className="text-center text-xs text-slate-400">Your email and phone number are never shown publicly.</p>
+      </form>
+    </AuthShell>
   );
 }

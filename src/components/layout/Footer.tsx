@@ -12,10 +12,10 @@ const COVERAGE = [
 
 export default function Footer() {
   const pathname = usePathname();
-  if (pathname === "/login" || pathname === "/register") return null;
+  if (pathname === "/login" || pathname === "/register" || pathname === "/reset-password") return null;
 
   return (
-    <footer className="mt-20 bg-slate-900 text-slate-300">
+    <footer className="mt-16 bg-sidebar text-slate-300">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 md:grid-cols-4">
         <div className="md:col-span-1">
           <div className="flex items-center gap-2.5">

@@ -13,7 +13,7 @@ export default function BanChecker() {
   }, [pathname]);
 
   const checkBanStatus = async () => {
-    if (pathname === "/banned" || pathname === "/login" || pathname === "/register") return;
+    if (pathname === "/banned" || pathname === "/login" || pathname === "/register" || pathname === "/reset-password") return;
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
